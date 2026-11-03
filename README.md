@@ -2,8 +2,8 @@
 
 **Setting generic drug prices to meet a health plan client's pricing guarantees, using linear programming (Python + Gurobi).**
 
-> Learning project, built September 2026 to understand PBM pricing-guarantee optimization.
-> Drug acquisition costs can come from public CMS NADAC data. AWP, claim volumes, current prices and contract terms are **simulated**. Nothing here reflects any real company's contracts or data.
+> Learning project, built September–November 2026 to understand PBM pricing-guarantee optimization.
+> Part 2 uses **real** generic acquisition costs from the public CMS NADAC file. AWP, claim volumes, current prices and contract terms are **simulated** throughout. Nothing here reflects any real company's contracts or data.
 
 ---
 
@@ -55,6 +55,118 @@ After optimization with a ±15% price-change limit, **all three channels hit the
 - Member cost-share impact.
 - Thousands of drugs. The pip version of Gurobi has a size-limited license, so this demo uses 200.
 
+Part 2 below takes on the first two of these.
+
+---
+
+# Part 2: one MAC list, many clients
+
+Part 1 priced a single client. A real PBM pays pharmacies from **one MAC list**
+that has to satisfy every client at once, each with its own drug mix and its own
+guarantees. Part 2 rebuilds the problem that way, on **real acquisition costs**.
+
+- **Costs are real:** 200 generic drugs from the CMS NADAC weekly file
+  (`data/raw/nadac_sample.csv`, as of 2026-10-28) — real names, real
+  `nadac_per_unit`, sampled across the cost range.
+- **Still simulated:** AWP, claim volumes, current prices, client contracts.
+
+**Decisions:** `p[drug, channel]`, the MAC price pharmacies are paid, and
+`s[client, channel]`, the scale factor applied to that list to bill each client.
+
+```bash
+python run_book.py       # 200 drugs x 3 channels, 12 clients, 6,111 claim lines
+```
+
+### The joint problem is bilinear, so it is solved as two LPs
+
+A client's spend is `sum(s * p * units)`, which multiplies two decision
+variables. Rather than hand that to a nonlinear solver, the model alternates:
+
+| step | held fixed | solved for | linear? |
+|---|---|---|---|
+| p-step | scale factors | the shared MAC list | yes |
+| s-step | the MAC list | scale factors | yes |
+
+Each step can only lower the same objective, which is bounded below by zero, so
+it converges — here in **2–3 passes**. This finds a local optimum, not a proven
+global one. The trade is deliberate: two exact LPs are easier to explain, debug
+and hand over than one nonlinear model.
+
+### Finding 1: one scale factor per client cannot work
+
+| scale factors | guarantee pools missed | true-up owed | margin given away |
+|---|---|---|---|
+| one per client | **14 of 36** | $55,128 | $5,485 |
+| one per client and channel | **0 of 36** | $0 | $0 |
+
+A client has three channel guarantees. One factor is a single degree of freedom
+aimed at three targets, so it lands on retail 30 and misses 90-day and mail.
+Three factors per client hit all of them exactly. The cost is operational, not
+mathematical: three times as many numbers to administer and audit.
+
+### Finding 2: some contracts cannot be priced profitably at all
+
+**6 of 12 clients are billed less than the pharmacies serving them are paid**,
+$404,657 in total. Their guarantees are deeper than the cost of filling their
+claims, so no MAC list fixes them. The model surfaces these as a
+contract-negotiation finding instead of quietly absorbing the loss.
+
+### Finding 3: exact-fit pricing is fragile, and the usual headline misleads
+
+Volumes do not land on plan, and they do not move independently — a whole
+therapeutic class shifts together. Scoring the chosen prices against 2,000
+**correlated** volume scenarios (client x class x drug effects):
+
+- **96.9%** of scenarios leave at least one pool owing a true-up
+- average true-up **$125,358**, 95th percentile **$406,395**
+- average margin given away **$129,594**
+
+That 96.9% sounds alarming and mostly is not: with 36 pools each near a coin
+flip, *something* almost always misses. The number that matters is dollars, and
+they are concentrated — **one client carries 52% of the exposure**. Reporting
+the probability alone would aim the team at the wrong problem.
+
+### Finding 4: a cushion buys predictability at a poor exchange rate
+
+![Cushion trade-off](outputs/cushion_tradeoff.png)
+
+Pricing a little above each guarantee, then scoring against the real ones:
+
+| cushion | chance of a true-up | avg true-up | 95th pct | margin given away |
+|---|---|---|---|---|
+| 0 | 97% | $125,358 | $406,395 | $129,594 |
+| 0.25 pt | 48% | $14,389 | $89,176 | $481,379 |
+| 0.50 pt | 6% | $578 | $566 | $929,793 |
+| 0.75 pt | 0% | $24 | $0 | $1,392,054 |
+| 1.00 pt | 0% | $0 | $0 | $1,854,378 |
+
+A quarter-point cushion removes **$111K** of expected true-up and costs
+**$352K** of extra margin — roughly **$3 given up per $1 of exposure avoided**.
+Aiming the cushion only at the riskiest pools did not help either: the exposure
+sits with the *largest* client, and a cushion costs in proportion to a client's
+spend while its benefit scales with the variance of that client's gap, which is
+proportionally smaller for a big book. Cushions are worst value exactly where
+the dollars are.
+
+**What that argues for:** better volume forecasting on the few large pools, and
+renegotiating the structurally unprofitable contracts — not a blanket cushion.
+Whether to buy a cushion anyway is a business judgment about how much a surprise
+true-up costs beyond its dollar amount. The table gives that conversation
+numbers instead of adjectives.
+
+### What Part 2 still leaves out
+
+- **Mid-year re-pricing.** Guarantees run over a contract year; by month 7 the
+  first 7 months are locked and only the rest can be steered. A year-to-date
+  model is the natural next step.
+- **Brand drugs, rebates, dispensing fees and specialty**, all of which sit in
+  real contracts.
+- **"Lesser of" logic** — many cheap generics actually pay at the pharmacy's
+  cash price, which changes the effective rate.
+- **Pharmacy-side guarantees** and per-network MAC lists (chain vs. independent).
+- **Scale is capped by the licence.** The pip build of Gurobi is size-limited,
+  so the book is 200 drugs and 12 clients rather than thousands.
+
 ---
 
 ## Technical details
@@ -92,21 +204,29 @@ If the model is infeasible, it computes an IIS (Irreducible Inconsistent Subsyst
 ### Project structure
 
 ```
-src/config.py    business assumptions (guarantees, limits, weights)
-src/data.py      NADAC loader + simulated AWP, claims, current prices
-src/model.py     Gurobi LP
-src/report.py    channel summary, trade-off sweep, chart
-run.py           end-to-end pipeline
-tests/           pytest checks on the model's guarantees and constraints
-.github/         CI: tests run on every push
+src/config.py      business assumptions (guarantees, limits, weights)
+src/data.py        NADAC loader + simulated AWP, claims, current prices
+src/model.py       Part 1: Gurobi LP for one client
+src/report.py      channel summary, trade-off sweep, chart
+run.py             Part 1 pipeline
+
+src/book.py        Part 2: real NADAC costs + a book of clients
+src/model_multi.py Part 2: shared MAC list + per-client scale factors (two LPs)
+src/risk.py        correlated volume scenarios, cushion sweep, chart
+run_book.py        Part 2 pipeline
+
+data/raw/          real CMS NADAC sample (2026-10-28)
+tests/             pytest checks on both models' guarantees and constraints
+.github/           CI: tests run on every push
 ```
 
 ### Run it
 
 ```bash
 pip install -r requirements.txt
-python run.py                              # simulated drug costs
-python run.py --nadac data/raw/nadac.csv   # real CMS acquisition costs
+python run.py                              # Part 1: one client, simulated costs
+python run.py --nadac data/raw/nadac.csv   # Part 1 with a full CMS NADAC download
+python run_book.py                         # Part 2: 12 clients, real NADAC costs
 pytest -q
 ```
 
