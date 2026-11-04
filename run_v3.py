@@ -167,7 +167,7 @@ def main():
     rm = required_multiplier(settled)
     off = rm[~rm["within_10pct"]]
     print(f"\n   For reference, the billing multiplier each pool would need if this were")
-    print(f"   a spread contract (the lever V2 optimized, reported here only):")
+    print(f"   a spread contract (reported as a diagnostic, never optimized):")
     print(f"     range {rm['required_multiplier'].min():.3f} to {rm['required_multiplier'].max():.3f}; "
           f"{len(off)} of {len(rm)} outside +/-10% of 1.0")
     rm.to_csv(out / "v3_required_multipliers.csv", index=False)

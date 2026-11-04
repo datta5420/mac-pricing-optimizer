@@ -1,17 +1,19 @@
 """V3: price the MAC list, with the contract held fixed.
 
-WHAT CHANGED FROM V2
-V2 let the optimizer choose a billing multiplier per client, free within
-0.85-1.15. That is a lever no pricing analyst has during a contract term, and
-it made the guarantees easy to hit for the wrong reason: if you may change the
-invoice, you can always keep the promise. V2 duly reported 0 of 36 pools missed
-and $0 of true-up. With the contract held fixed, 3 of those 36 pools cannot be
-reached in a single pricing cycle under the +/-15% price-change limit, leaving
-$16,146 of true-up. They ARE reachable on drug economics alone -- see
-`feasibility_report`, which separates the two causes -- so the perfect score
-was an artefact of the extra lever, not of the contracts being unpriceable.
+WHAT THE EARLIER VERSION GOT WRONG
+An intermediate version of this model (Part 2, removed from the working tree;
+still readable at commit d3d8ce7) let the optimizer choose a billing multiplier
+per client, free within 0.85-1.15. That is a lever no pricing analyst has
+during a contract term, and it made the guarantees easy to hit for the wrong
+reason: if you may change the invoice, you can always keep the promise. It duly
+reported 0 of 36 pools missed and $0 of true-up. With the contract held fixed,
+3 of those 36 pools cannot be reached in a single pricing cycle under the
++/-15% price-change limit, leaving $16,146 of true-up. They ARE reachable on
+drug economics alone -- see `feasibility_report`, which separates the two
+causes -- so the perfect score was an artefact of the extra lever, not of the
+contracts being unpriceable.
 
-V3 removes them. The contract is an input:
+This version removes that lever. The contract is an input:
 
     decision  :  p[j], the MAC price for row j = (drug, channel)
     fixed     :  every client's guarantee, every fee
@@ -29,9 +31,10 @@ the objective value and exceeds the expected-true-up term. It is reported
 separately rather than folded into the P&L.
 
 UNCERTAINTY IS OPTIMIZED, NOT JUST MEASURED
-Volumes are not known when prices are set. V2 priced on plan volumes and scored
-the result afterwards. V3 puts scenarios inside the objective (sample average
-approximation) and can also control the tail with CVaR:
+Volumes are not known when prices are set. The earlier version priced on plan
+volumes and scored the result afterwards. This one puts scenarios inside the
+objective (sample average approximation) and can also control the tail with
+CVaR:
 
     minimise  (1 - lam) * E[L_s]  +  lam * CVaR_alpha(L_s)  +  w * disruption
 

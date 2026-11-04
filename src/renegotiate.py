@@ -12,9 +12,10 @@ and the related one, for arrangements that do use a client billing multiplier:
     what multiplier would this client's contract need for the guarantee to
     hold at these prices?
 
-Keeping it in its own file is deliberate. V2 mixed this up with pricing, let
-the optimizer move billing multipliers freely, and so "met" every guarantee for
-a reason no pricing analyst could reproduce.
+Keeping it in its own file is deliberate. An earlier version of this model
+(Part 2, removed; at commit d3d8ce7) mixed this up with pricing, let the
+optimizer move billing multipliers freely, and so "met" every guarantee for a
+reason no pricing analyst could reproduce.
 """
 import pandas as pd
 
@@ -62,8 +63,8 @@ def deliverable_guarantee(mac, claims, guarantees, max_change=None, margin_floor
 def required_multiplier(settled):
     """For a spread-style contract: the billing multiplier each pool would need.
 
-    Reported, never optimized. This is the number V2 let the optimizer choose.
-    Showing it as a diagnostic makes the difference concrete: a multiplier far
+    Reported, never optimized. This is the number the earlier version let the
+    optimizer choose. Showing it as a diagnostic makes it concrete: a multiplier far
     from 1.0 means the contract and the price list disagree, which is a
     commercial conversation rather than a solver setting.
     """

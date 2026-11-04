@@ -2,5 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 data/raw/*.csv
+# ...except the 250-drug sample, which IS the input Part 3 runs on. It is public
+# CMS data (NADAC weekly file, 2026-10-28) and 12 KB, so it ships with the repo.
+!data/raw/nadac_sample.csv
 gurobi.log
 .pytest_cache/
