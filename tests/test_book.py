@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+pytest.importorskip("gurobipy", reason="Gurobi is not installed in this environment")
+
 from src import config
 from src.book import build_book, load_nadac_sample, mac_table
 from src.model_multi import client_summary, optimize_book

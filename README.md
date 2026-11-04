@@ -167,6 +167,199 @@ numbers instead of adjectives.
 - **Scale is capped by the licence.** The pip build of Gurobi is size-limited,
   so the book is 200 drugs and 12 clients rather than thousands.
 
+> **Superseded by Part 3.** A reviewer pointed out that Part 2 lets the
+> optimizer choose each client's billing multiplier. That is a lever no pricing
+> analyst has mid-contract, and it is why Part 2 reports a perfect score. Part 2
+> is kept as a baseline; Part 3 is the honest version.
+
+---
+
+# Part 3: contract-aware pricing under uncertainty
+
+Part 2 could hit every guarantee because it was allowed to change what clients
+were billed. Part 3 takes that lever away. The contract is an **input**:
+
+| | |
+|---|---|
+| **Decided** | `p[drug, channel]` — the MAC price pharmacies are paid |
+| **Fixed by contract** | every client's AWP discount guarantee, dispensing fees, admin fees |
+| **Moved out of pricing** | billing multipliers, now a separate renewal question in `renegotiate.py` |
+
+```bash
+python run_v3.py     # 150 drugs x 3 channels, 12 clients, 4,614 claim lines
+```
+
+### The pass-through assumption, stated plainly
+
+This model bills the client the same ingredient cost the pharmacy receives:
+
+```
+client ingredient charge = pharmacy ingredient reimbursement = MAC x units
+client total charge      = ingredient + dispensing fee x scripts + admin fee x scripts
+```
+
+That is **a simplification, not an industry rule**. Real pass-through contracts
+differ in how ingredient cost and fees are defined, and spread arrangements are
+a different structure that is not modelled here. Fees are kept out of the
+ingredient total throughout, because the guarantee is written against
+ingredient cost alone.
+
+### The economics this produces
+
+Under pass-through the ingredient dollars flow through untouched, so:
+
+```
+PBM revenue      = admin fee x scripts      (independent of the MAC price)
+PBM cost         = true-up payments         (depends on the MAC price)
+contribution     = revenue - true-ups - operating cost
+```
+
+Two consequences worth stating, because both are easy to get wrong:
+
+- **Over-delivering a discount is not a PBM expense.** A lower MAC means the
+  pharmacy is paid less and the client pays less. Those dollars were never the
+  PBM's. Part 2 subtracted them as "margin given away"; Part 3 reports them as
+  **guarantee overperformance**, a client benefit, and never nets them against
+  margin.
+- **Admin-fee revenue cannot change the optimal prices**, since it does not
+  depend on the MAC. It belongs in the P&L, not the objective.
+
+So the only pricing-dependent cost is true-ups, which pushes prices **down**,
+and the pharmacy reimbursement floor pushes them **up**. That tension is the
+entire optimization.
+
+### Finding 1: three guarantees are out of reach, and stability policy is why
+
+Before any solving, the cheapest a pool can be billed is every price at its
+lower bound, so comparing that to the guarantee settles reachability exactly.
+But the lower bound is `max(pharmacy floor, last price × (1 − change limit))`,
+and which of those two binds changes the answer entirely:
+
+| | pools |
+|---|---|
+| feasible | **33 of 36** |
+| unreachable **this cycle** — the ±15% price-change limit binds | **3 of 36** |
+| infeasible on drug cost — the pharmacy floor binds | **0 of 36** |
+
+All three are `mail` on the deepest tier (87.5%), short by 0.01–0.41 points, and
+**$16,146 of true-up cannot be avoided in this cycle.** But on those pools only
+about 8% of the cheapest possible spend sits on the pharmacy floor. Widen the
+one-cycle change limit and the shortfall disappears:
+
+| one-cycle change limit | pools short | unavoidable true-up |
+|---|---|---|
+| ±15% (current policy) | 3 | $16,146 |
+| ±17% | 2 | $5,077 |
+| ±20% | 0 | $0 |
+
+So this is **not** a drug-economics problem. Every contract here is deliverable
+once prices have time to get there; the constraint is how fast prices are
+allowed to move. `renegotiate.py` reports the two cases separately, because the
+remedies differ: a pool short on cost needs a new contract, a pool short on
+stability needs another cycle or a looser limit.
+
+Part 2 reported $0 here, because it could re-bill the client instead. That is
+the substantive difference between the versions — though note it is $16,146
+against a change-limit policy, not an unavoidable cost of the book.
+
+### Finding 2: optimizing against uncertainty beats pricing on the plan
+
+Scenarios go **inside** the objective (sample average approximation), not just
+into a stress test afterwards. Trained on 15 correlated volume scenarios,
+scored on 2,000 held out:
+
+| strategy | mean true-up | 95th pct | CVaR 95% | mean contribution | P(negative year) |
+|---|---|---|---|---|---|
+| plan volumes only | $23,330 | $44,073 | $50,993 | $22,679 | 4.5% |
+| **expected cost (SAA)** | **$17,270** | **$26,049** | **$30,174** | **$28,739** | **0.1%** |
+| SAA + CVaR (w=0.5) | $17,288 | $26,094 | $30,255 | $28,721 | 0.1% |
+| CVaR only (w=1.0) | $17,765 | $27,730 | $32,473 | $28,244 | 0.2% |
+
+Pricing against scenarios cuts expected true-up by **26%** ($6,060) and the 95th
+percentile by **41%**.
+
+Contribution rises by **the same $6,060**, not by a further amount: admin fees
+and operating costs do not depend on price, so `contribution = admin − true-up
+− opcost` moves one-for-one with the true-up saved. It is one gain reported two
+ways, and quoting both as separate improvements would double-count it.
+
+### Finding 3: CVaR did not help here, and the reason matters
+
+CVaR is implemented (Rockafellar–Uryasev, linearised) and it makes the result
+slightly **worse** out of sample. That is not a bug. With 15 training
+scenarios, a 0.80 tail rests on 3 points, so the CVaR term fits sampling noise
+rather than real tail risk. At 0.95 it would rest on 0.75 of a scenario and
+collapse to a minimax.
+
+The honest conclusion at this sample size is to use expected cost. CVaR is
+worth revisiting with a licence that allows enough scenarios to estimate a tail.
+Reporting this rather than quietly dropping the code is the point.
+
+### Finding 4: the settlement is recomputed independently
+
+`src/reconcile.py` rebuilds the contract year from the claim lines — group the
+claims, apply each guarantee, take the positive part — the way a finance team
+would. It is compared against **the solver's own true-up decision variables**,
+so the two calculations share only the price vector and the input data. They
+agree to **$0.000000**.
+
+An earlier version of this check compared price × units aggregated two
+different ways, which could not really fail. A test now corrupts the price
+vector and asserts the check *does* fail, so it is worth something.
+
+**P&L on plan volumes** (one planned year, not an expectation):
+
+| | |
+|---|---|
+| admin fee revenue | $82,935 |
+| true-up payments | −$16,146 |
+| operating cost | −$37,500 |
+| **contribution margin** | **$29,289** |
+| *(pass-through ingredient)* | *$11,513,486* |
+| *(guarantee overperformance)* | *$1,006,993 — client benefit, not a PBM expense* |
+
+Across the 2,000 held-out years those same prices give a mean true-up of
+$17,270 and mean contribution of $28,739. The table above is the planned year;
+in a section arguing against pricing on the plan, it would be careless not to
+say which basis it uses.
+
+**One term is not in the P&L and should be named.** The objective also carries
+a price-stability penalty, `0.01 × Σ units × |p − p₀|`, worth $18,639 of the
+$37,022 objective — about half of it, and larger than the expected-true-up
+term. It is a non-cash proxy for the operational cost of repricing, not a
+contract cost, so it is deliberately excluded from the P&L. It is doing real
+work in the solution, though: 402 of 450 prices move, and the solver sits
+against the ±15% boundary, which is also why Finding 1 comes out the way it
+does. Calling it a tie-breaker, as Part 1 fairly could, would be wrong here.
+
+### What changed from Part 2
+
+| | Part 2 | Part 3 |
+|---|---|---|
+| Client billing multiplier | optimized, free in 0.85–1.15 | **fixed by contract**; renewal question moved to `renegotiate.py` |
+| Guarantees met | 36 of 36, $0 true-up | 33 of 36; $16,146 short **against the ±15% change limit** |
+| Uncertainty | measured after optimizing | **optimized against** (SAA, optional CVaR) |
+| Over-delivery | subtracted as "margin given away" | reported as overperformance, **not** a cost |
+| Financials | billed minus paid (spread) | admin revenue − true-ups − operating cost |
+| Validation | price × units, two ways | solver's own true-up variables vs **independent settlement** |
+| Test skipping | missing package only | missing package **or licence** (`tests/conftest.py`) |
+| Synthetic fields | `klass` | `synthetic_class`, documented as a random label |
+
+### What Part 3 still leaves out
+
+- **Mid-year re-pricing.** Guarantees run over a contract year; by month 7 only
+  the remaining months can be steered.
+- **Multiple MAC lists and pharmacy networks.** Real PBMs maintain different
+  schedules per network and programme. Deferred deliberately: it adds plumbing
+  without changing any finding here.
+- **Spread arrangements**, brand drugs, rebates, specialty, and "lesser of"
+  logic against the pharmacy's cash price.
+- **Cloud deployment.** The architecture is straightforward — claims in
+  BigQuery, a scheduled solve, prices written back — but it is not built here,
+  and describing it honestly beats a token implementation.
+- **Scale.** The pip Gurobi licence caps the model at roughly 2,000 variables,
+  which sets the 150 drugs × 12 clients × 15 scenarios used above.
+
 ---
 
 ## Technical details
@@ -210,10 +403,16 @@ src/model.py       Part 1: Gurobi LP for one client
 src/report.py      channel summary, trade-off sweep, chart
 run.py             Part 1 pipeline
 
-src/book.py        Part 2: real NADAC costs + a book of clients
+src/book.py        Part 2/3: real NADAC costs + a book of clients
 src/model_multi.py Part 2: shared MAC list + per-client scale factors (two LPs)
 src/risk.py        correlated volume scenarios, cushion sweep, chart
 run_book.py        Part 2 pipeline
+
+src/contract.py    Part 3: fixed contract terms, pass-through, fee structure
+src/model_v3.py    Part 3: MAC-only optimization, SAA + optional CVaR
+src/reconcile.py   Part 3: independent settlement and P&L (no solver output)
+src/renegotiate.py Part 3: renewal questions, kept out of pricing
+run_v3.py          Part 3 pipeline
 
 data/raw/          real CMS NADAC sample (2026-10-28)
 tests/             pytest checks on both models' guarantees and constraints
@@ -227,7 +426,8 @@ pip install -r requirements.txt
 python run.py                              # Part 1: one client, simulated costs
 python run.py --nadac data/raw/nadac.csv   # Part 1 with a full CMS NADAC download
 python run_book.py                         # Part 2: 12 clients, real NADAC costs
-pytest -q
+python run_v3.py                           # Part 3: contract fixed, uncertainty optimized
+pytest -q                                  # 32 tests; skipped cleanly with no Gurobi or no licence
 ```
 
 To use real costs, download a NADAC CSV from data.medicaid.gov (search "NADAC") and save it as `data/raw/nadac.csv`. The loader keeps generic drugs and the latest price per NDC.

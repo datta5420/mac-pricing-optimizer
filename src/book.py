@@ -17,6 +17,9 @@ from . import config
 CHANNELS = config.CHANNELS
 
 # Guarantee tiers a PBM might offer. Bigger books negotiate deeper discounts.
+# Nominal units per prescription, by channel. A modelling assumption only.
+UNITS_PER_SCRIPT = {"retail_30": 30.0, "retail_90": 90.0, "mail": 90.0}
+
 TIERS = {
     "standard": {"retail_30": 0.79, "retail_90": 0.83, "mail": 0.85},
     "mid":      {"retail_30": 0.80, "retail_90": 0.84, "mail": 0.86},
@@ -49,10 +52,11 @@ def build_book(drugs, n_clients=12, seed=config.SEED):
     # Generic AWP sits far above acquisition cost; the multiple varies by drug.
     d["awp"] = np.round(d["nadac"] * rng.uniform(6, 18, len(d)), 4)
 
-    # Drug-level popularity (skewed) and a therapeutic class used later for
-    # correlated cost/volume shocks.
+    # Drug-level popularity (skewed). `synthetic_class` is a RANDOM grouping
+    # label, NOT a real therapeutic classification (not AHFS, USP or EPC): it
+    # exists only so the risk model can move related drugs together.
     d["popularity"] = rng.lognormal(mean=0, sigma=1.4, size=len(d))
-    d["klass"] = rng.integers(0, 12, len(d))
+    d["synthetic_class"] = rng.integers(0, 12, len(d))
 
     clients = pd.DataFrame({
         "client_id": range(n_clients),
@@ -69,12 +73,17 @@ def build_book(drugs, n_clients=12, seed=config.SEED):
         used = rng.random(len(d)) < 0.85
         part0 = d[used]
         for ch in CHANNELS:
-            part = part0[["drug_id", "name", "unit", "nadac", "awp", "klass"]].copy()
+            part = part0[["drug_id", "name", "unit", "nadac", "awp", "synthetic_class"]].copy()
             part["client_id"] = c.client_id
             part["channel"] = ch
             mix = c.mail_pref if ch == "mail" else share[ch]
             units = part0["popularity"].values * c.size * mix * 1200 * rng.uniform(0.6, 1.4, len(part0))
             part["units"] = np.maximum(np.round(units), 1.0)
+            # Prescription count, needed because dispensing and admin fees are
+            # charged per script, not per unit. UNITS_PER_SCRIPT is a modelling
+            # assumption: a nominal days-supply, applied to every pricing unit
+            # (EA, ML, GM) alike.
+            part["scripts"] = np.maximum(np.round(part["units"] / UNITS_PER_SCRIPT[ch]), 1.0)
             rows.append(part)
     claims = pd.concat(rows, ignore_index=True)
 
@@ -100,6 +109,7 @@ def mac_table(claims):
     """The distinct (drug, channel) rows the MAC list prices, with total units."""
     t = (claims.groupby(["drug_id", "channel"], as_index=False)
                 .agg(name=("name", "first"), nadac=("nadac", "first"),
-                     awp=("awp", "first"), klass=("klass", "first"),
-                     units=("units", "sum"), current_price=("current_price", "first")))
+                     awp=("awp", "first"), synthetic_class=("synthetic_class", "first"),
+                     units=("units", "sum"), scripts=("scripts", "sum"),
+                     current_price=("current_price", "first")))
     return t.reset_index(drop=True)

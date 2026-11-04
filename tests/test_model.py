@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+pytest.importorskip("gurobipy", reason="Gurobi is not installed in this environment")
+
 from src import config
 from src.data import build_dataset
 from src.model import optimize_prices

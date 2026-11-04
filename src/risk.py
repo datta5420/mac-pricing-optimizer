@@ -21,7 +21,7 @@ def volume_scenarios(mac, clients, n_scen, client_sd=0.06, class_sd=0.12,
     """Multipliers of shape (n_clients, n_mac_rows, n_scen)."""
     rng = np.random.default_rng(seed)
     n_c, n_j = len(clients), len(mac)
-    klass = mac["klass"].values
+    klass = mac["synthetic_class"].values
     n_k = int(klass.max()) + 1
 
     client_eff = rng.lognormal(0, client_sd, size=(n_c, 1, n_scen))

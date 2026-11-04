@@ -1,0 +1,5 @@
+strategy,vars,mean_true_up_$,p95_true_up_$,cvar95_true_up_$,mean_contribution_$,p05_contribution_$,P(negative year)
+plan volumes only,1386,23330,44073,50993,22679,720,0.045
+expected cost (SAA),1890,17270,26049,30174,28739,18935,0.001
+SAA + CVaR (w=0.5),1906,17288,26094,30255,28721,18861,0.001
+CVaR only (w=1.0),1906,17765,27730,32473,28244,17096,0.002
