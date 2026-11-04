@@ -7,7 +7,9 @@
 
 **Two parts.** [Part 1](#the-business-problem) prices a single client's guarantee on simulated costs — the smallest version of the problem that is still real. **[Part 3](#part-3-contract-aware-pricing-under-uncertainty) is the current version**: one MAC list serving twelve clients on real NADAC costs, with the contract held fixed and volume uncertainty inside the objective rather than measured afterwards.
 
-An intermediate Part 2 sat between them and has been removed from the working tree, because Part 3 supersedes it and corrects a design flaw it had: it let the optimizer change what each client was billed, which made every guarantee easy to meet for a reason no pricing analyst could reproduce. It is still readable at commit [`d3d8ce7`](../../commit/d3d8ce7), and [what changed](#what-changed-from-the-earlier-version) is documented below.
+**Headline result.** Putting volume uncertainty inside the objective — rather than pricing on planned volumes and measuring the damage afterwards — cut **expected true-up by 26%** and the **95th-percentile true-up by 41%**. Both figures come from 2,000 held-out **synthetic** utilization scenarios, drawn with a different random seed from the 15 the prices were optimized against, so the comparison is out of sample. The volumes are simulated; what the result demonstrates is the method, not a dollar forecast. [Finding 2](#finding-2-optimizing-against-uncertainty-beats-pricing-on-the-plan) has the full table.
+
+An intermediate Part 2 sat between them and has been removed, because Part 3 supersedes it and corrects a modelling flaw it had: it let the optimizer adjust what each client was billed as well as the prices. It is still readable at commit [`d3d8ce7`](../../commit/d3d8ce7), and [what changed](#what-changed-from-the-earlier-version) sets out the flaw and the fix.
 
 ---
 
@@ -265,6 +267,15 @@ does. Calling it a tie-breaker, as Part 1 fairly could, would be wrong here.
 
 Part 2 is no longer in the working tree; it is at commit [`d3d8ce7`](../../commit/d3d8ce7)
 if you want to read it. This is what it got wrong and what replaced it.
+
+**The flaw, stated precisely.** Part 2 optimized a per-client billing multiplier,
+free within 0.85–1.15, *alongside* the MAC prices. Its prices did move — the
+problem was never that they stayed still — but that second lever let a guarantee
+be satisfied by adjusting the client's invoice rather than by the price list
+alone. So its headline of 36 of 36 guarantees met and $0 true-up never
+demonstrated that MAC pricing on its own could meet all 36. Part 3 removes the
+lever; the renewal question it was really answering moves to `renegotiate.py`,
+reported and never optimized.
 
 | | Part 2 (removed) | Part 3 |
 |---|---|---|
