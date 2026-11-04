@@ -224,9 +224,13 @@ Two consequences worth stating, because both are easy to get wrong:
 - **Admin-fee revenue cannot change the optimal prices**, since it does not
   depend on the MAC. It belongs in the P&L, not the objective.
 
-So the only pricing-dependent cost is true-ups, which pushes prices **down**,
-and the pharmacy reimbursement floor pushes them **up**. That tension is the
-entire optimization.
+So the only pricing-dependent **contract** cost is true-ups, which pushes
+prices **down**, while the pharmacy reimbursement floor pushes them **up** and
+the price-change limit stops either side moving far in one cycle.
+
+That is true of the P&L but not of the objective: the solver also carries a
+price-stability penalty worth about half the objective value. It is a non-cash
+proxy rather than a contract cost, and Finding 4 gives the numbers.
 
 ### Finding 1: three guarantees are out of reach, and stability policy is why
 
@@ -410,7 +414,8 @@ run_book.py        Part 2 pipeline
 
 src/contract.py    Part 3: fixed contract terms, pass-through, fee structure
 src/model_v3.py    Part 3: MAC-only optimization, SAA + optional CVaR
-src/reconcile.py   Part 3: independent settlement and P&L (no solver output)
+src/reconcile.py   Part 3: settlement and P&L rebuilt from claims, plus the
+                   one function that deliberately reads the solver, to check it
 src/renegotiate.py Part 3: renewal questions, kept out of pricing
 run_v3.py          Part 3 pipeline
 

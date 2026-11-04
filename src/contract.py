@@ -42,14 +42,18 @@ PBM's; a lower MAC means the pharmacy is paid less and the client pays less.
 It is reported as guarantee overperformance (a client benefit), never
 subtracted from margin as if it were a loss.
 
-So the only pricing-dependent cost is true-ups, which pushes MAC prices DOWN,
-and the counterweight is the pharmacy reimbursement floor, which pushes them
-UP. That tension is the whole optimization.
+So the only pricing-dependent CONTRACT cost is true-ups, which pushes MAC
+prices DOWN, and the counterweight is the pharmacy reimbursement floor, which
+pushes them UP.
+
+One caveat, because it is easy to overstate the line above: the optimizer's
+objective also carries a price-stability penalty, which is a non-cash proxy for
+the operational cost of repricing rather than a contract cost. It is large
+enough to shape the answer (about half the objective on the README's book), so
+"true-ups are the only pricing-dependent cost" is true of the P&L and not of
+the objective. See `model_v3`.
 """
 import numpy as np
-import pandas as pd
-
-from . import config
 
 # Per-script fees. Simulated contract terms, not taken from any real contract.
 DISPENSING_FEE = {"retail_30": 1.25, "retail_90": 1.75, "mail": 0.60}
@@ -57,9 +61,12 @@ ADMIN_FEE_PER_SCRIPT = 0.45
 OPERATING_COST_PER_SCRIPT = 0.18
 
 
-def contract_terms(clients, seed=config.SEED):
-    """Per-client fee terms. Guarantees come from book.build_book and are fixed."""
-    rng = np.random.default_rng(seed + 11)
+def contract_terms(clients):
+    """Per-client fee terms. Guarantees come from book.build_book and are fixed.
+
+    Deterministic: the admin fee is a function of the client's size rank, so
+    this takes no seed.
+    """
     out = clients.copy()
     # Larger books negotiate a lower admin fee.
     rank = out["size"].rank(pct=True).values

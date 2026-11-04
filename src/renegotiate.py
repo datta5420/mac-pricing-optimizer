@@ -18,6 +18,7 @@ a reason no pricing analyst could reproduce.
 """
 import pandas as pd
 
+from . import config
 from .model_v3 import pool_index, price_bounds
 
 
@@ -34,10 +35,6 @@ def deliverable_guarantee(mac, claims, guarantees, max_change=None, margin_floor
     `deepest_this_cycle` needs more cycles or a wider limit. A pool short on
     `deepest_ever` needs a different contract.
     """
-    import numpy as np
-
-    from . import config
-
     lo, _, _ = price_bounds(mac, max_change, margin_floor)
     mf = config.PHARMACY_MARGIN_FLOOR if margin_floor is None else margin_floor
     floor_only = mac["nadac"].values * (1 + mf)
@@ -62,17 +59,18 @@ def deliverable_guarantee(mac, claims, guarantees, max_change=None, margin_floor
     return pd.DataFrame(rows)
 
 
-def required_multiplier(result, guarantees, settled):
+def required_multiplier(settled):
     """For a spread-style contract: the billing multiplier each pool would need.
 
-    Reported, never optimized. A multiplier far from 1.0 says the contract and
-    the price list disagree, which is a commercial conversation, not a solver
-    setting.
+    Reported, never optimized. This is the number V2 let the optimizer choose.
+    Showing it as a diagnostic makes the difference concrete: a multiplier far
+    from 1.0 means the contract and the price list disagree, which is a
+    commercial conversation rather than a solver setting.
     """
     rows = []
     for r in settled.itertuples():
         need = r.allowed_ingredient / r.ingredient if r.ingredient else float("nan")
         rows.append({"client": int(r.client), "channel": r.channel,
                      "required_multiplier": round(need, 4),
-                     "within_10pct": abs(need - 1) <= 0.10})
+                     "within_10pct": bool(abs(need - 1) <= 0.10)})
     return pd.DataFrame(rows)

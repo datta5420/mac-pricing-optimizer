@@ -1,9 +1,14 @@
 """Recompute every number from the claims, independently of the optimizer.
 
-Nothing here reads a slack variable or any other solver output. It takes the
-final MAC prices and the claim lines and rebuilds the contract settlement from
-scratch, the way a finance team would at reconciliation. If this disagrees with
-the solver, the solver is wrong -- that is the point of keeping it separate.
+`settle()` and `pnl()` read no solver output at all. They take the final MAC
+prices and the claim lines and rebuild the contract settlement from scratch,
+the way a finance team would, so if they disagree with the solver, the solver
+is wrong. That is the point of keeping them separate.
+
+`check_true_up_against_solver()` is the one function here that deliberately
+DOES read solver output -- the `short` decision variables -- because its whole
+job is to hold the solver's own answer against the independent one. It is kept
+in this module so the comparison lives next to the calculation it checks.
 
 Three figures are kept apart on purpose:
 

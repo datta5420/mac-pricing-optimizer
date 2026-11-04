@@ -3,9 +3,8 @@ import pytest
 
 pytest.importorskip("gurobipy", reason="Gurobi is not installed in this environment")
 
-from src import config
 from src.book import build_book, load_nadac_sample, mac_table
-from src.contract import DISPENSING_FEE, contract_terms
+from src.contract import contract_terms
 from src.model_v3 import feasibility_report, optimize_mac, price_bounds
 from src.reconcile import check_true_up_against_solver, pnl, scenario_pnl, settle
 from src.renegotiate import deliverable_guarantee

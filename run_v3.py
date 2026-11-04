@@ -14,7 +14,7 @@ from src.book import build_book, load_nadac_sample, mac_table
 from src.contract import contract_terms, describe_assumptions
 from src.model_v3 import feasibility_report, optimize_mac
 from src.reconcile import check_true_up_against_solver, pnl, scenario_pnl, settle
-from src.renegotiate import deliverable_guarantee
+from src.renegotiate import deliverable_guarantee, required_multiplier
 from src.risk import volume_scenarios
 
 
@@ -145,6 +145,14 @@ def main():
         print(cycles[["client", "channel", "promised_guarantee", "deepest_this_cycle",
                       "deepest_ever", "short_this_cycle_pts"]].to_string(index=False))
     dg.to_csv(out / "v3_renegotiation.csv", index=False)
+
+    rm = required_multiplier(settled)
+    off = rm[~rm["within_10pct"]]
+    print(f"\n   For reference, the billing multiplier each pool would need if this were")
+    print(f"   a spread contract (the lever V2 optimized, reported here only):")
+    print(f"     range {rm['required_multiplier'].min():.3f} to {rm['required_multiplier'].max():.3f}; "
+          f"{len(off)} of {len(rm)} outside +/-10% of 1.0")
+    rm.to_csv(out / "v3_required_multipliers.csv", index=False)
     print(f"\nSaved outputs to {out}/")
 
 

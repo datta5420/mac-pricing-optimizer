@@ -5,9 +5,11 @@ V2 let the optimizer choose a billing multiplier per client, free within
 0.85-1.15. That is a lever no pricing analyst has during a contract term, and
 it made the guarantees easy to hit for the wrong reason: if you may change the
 invoice, you can always keep the promise. V2 duly reported 0 of 36 pools missed
-and $0 of true-up. With the contract held fixed, 3 of those 36 pools turn out
-to be unreachable at any MAC price, and $16,146 of true-up is unavoidable. The
-perfect score was an artefact of the extra lever.
+and $0 of true-up. With the contract held fixed, 3 of those 36 pools cannot be
+reached in a single pricing cycle under the +/-15% price-change limit, leaving
+$16,146 of true-up. They ARE reachable on drug economics alone -- see
+`feasibility_report`, which separates the two causes -- so the perfect score
+was an artefact of the extra lever, not of the contracts being unpriceable.
 
 V3 removes them. The contract is an input:
 
@@ -15,10 +17,16 @@ V3 removes them. The contract is an input:
     fixed     :  every client's guarantee, every fee
     assumption:  pass-through, so the client's ingredient charge IS p * units
 
-That leaves one genuine tension. A client's guarantee caps what it may be
-billed, which pushes prices DOWN. The pharmacy reimbursement floor pushes them
-UP. One shared MAC list has to serve twelve clients with different drug mixes,
-so the optimizer has to decide whose guarantee gets missed, and by how much.
+That leaves a genuine tension. A client's guarantee caps what it may be billed,
+which pushes prices DOWN. The pharmacy reimbursement floor pushes them UP, and
+the price-change limit stops either side moving far in one cycle. One shared
+MAC list has to serve twelve clients with different drug mixes, so the
+optimizer has to decide whose guarantee gets missed, and by how much.
+
+Note that the objective also carries a price-stability penalty, which is not a
+contract cost and is NOT small: on the book in the README it is roughly half
+the objective value and exceeds the expected-true-up term. It is reported
+separately rather than folded into the P&L.
 
 UNCERTAINTY IS OPTIMIZED, NOT JUST MEASURED
 Volumes are not known when prices are set. V2 priced on plan volumes and scored

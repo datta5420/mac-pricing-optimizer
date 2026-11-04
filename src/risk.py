@@ -13,8 +13,6 @@ when the year does not go to plan.
 """
 import numpy as np
 
-from . import config
-
 
 def volume_scenarios(mac, clients, n_scen, client_sd=0.06, class_sd=0.12,
                      drug_sd=0.10, seed=0):
