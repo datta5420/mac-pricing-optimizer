@@ -181,3 +181,39 @@ def test_fees_are_separate_from_ingredient_cost(book, solved):
     # appear in the allowed amount.
     assert np.allclose(s["allowed_ingredient"], (1 - s["guarantee"]) * s["awp"])
     assert (s["dispensing"] > 0).all() and (s["admin"] > 0).all()
+
+
+def test_reconciliation_checks_every_scenario_not_just_the_first(book):
+    """scenario=None must cover all solved scenarios, so no variable goes untested."""
+    claims, mac, guarantees, terms = book
+    clients = np.arange(claims["client_id"].nunique())
+    sc = volume_scenarios(mac, clients, 6, seed=21)
+    r = optimize_mac(claims, mac, guarantees, scenarios=sc)
+    per = [check_true_up_against_solver(claims, r["prices"], guarantees, terms, r, scenario=s)
+           for s in range(6)]
+    assert check_true_up_against_solver(claims, r["prices"], guarantees, terms, r) == max(per)
+    assert max(per) < 1e-6
+
+
+def test_floor_exceptions_are_reported_and_only_go_upward(book, solved):
+    """A price may exceed the change cap only when the pharmacy floor forces it."""
+    from src import config
+    pr = solved["prices"]
+    capped = pr["current_price"] * (1 + config.MAX_PRICE_CHANGE)
+    breached = pr["new_price"] > capped + 1e-9
+    # every breach is flagged, and flagged rows never breach downward
+    assert (breached <= pr["floor_override"]).all()
+    floor = pr["nadac"] * (1 + config.PHARMACY_MARGIN_FLOOR)
+    assert (pr.loc[breached, "new_price"] <= floor[breached] + 1e-6).all()
+
+
+def test_margin_floor_is_a_real_parameter(book):
+    """A higher pharmacy floor must raise true-up and cut contribution, monotonically."""
+    claims, mac, guarantees, terms = book
+    out = []
+    for mf in [0.02, 0.08]:
+        r = optimize_mac(claims, mac, guarantees, margin_floor=mf)
+        s = settle(claims, r["prices"], guarantees, terms)
+        out.append((s["true_up_$"].sum(), s["contribution_$"].sum()))
+    assert out[1][0] >= out[0][0]
+    assert out[1][1] <= out[0][1]

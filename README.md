@@ -304,12 +304,47 @@ Reporting this rather than quietly dropping the code is the point.
 `src/reconcile.py` rebuilds the contract year from the claim lines — group the
 claims, apply each guarantee, take the positive part — the way a finance team
 would. It is compared against **the solver's own true-up decision variables**,
-so the two calculations share only the price vector and the input data. They
-agree to **$0.000000**.
+so the two calculations share only the price vector and the input data.
+
+The check runs over **all 15 scenarios the model was solved on**, each against
+its own volumes, and takes the worst disagreement: **$0.000000**. Checking only
+the first scenario would leave most of the solver's variables untested, and
+since the model trains on perturbed volumes, scenario 0 is not the planned
+year — so that figure must not be read as validating the plan-volume P&L
+below. It validates the solve.
 
 An earlier version of this check compared price × units aggregated two
 different ways, which could not really fail. A test now corrupts the price
 vector and asserts the check *does* fail, so it is worth something.
+
+### Exceptions to the price-change policy
+
+The ±15% cap is not absolute: where the pharmacy cost floor sits above it, the
+floor wins, because paying a pharmacy below acquisition cost is worse than a
+larger price move. That is a deliberate choice and it should be counted, not
+buried:
+
+- **23 of 450 prices** breach the cap for this reason
+- extra spend above the capped price on those rows: **$9,854**, 0.09% of ingredient cost
+- largest single increase: **92.2%**
+
+### The pharmacy floor is an assumption, so here is what it is worth
+
+The floor is `NADAC × (1 + margin)`. NADAC is a national survey average, not
+any pharmacy's contracted rate, and a real network would use negotiated terms,
+lesser-of provisions and different schedules per network. `margin_floor` is a
+parameter everywhere rather than a constant, and the answer moves with it:
+
+| margin over NADAC | pools short | true-up (plan) | contribution | floor exceptions |
+|---|---|---|---|---|
+| 2% | 2 | $14,845 | $30,589 | 18 |
+| **5% (default)** | **3** | **$16,146** | **$29,289** | **23** |
+| 8% | 3 | $17,648 | $27,786 | 24 |
+| 12% | 3 | $19,868 | $25,566 | 31 |
+
+Contribution falls roughly $500 for each point added to the floor. Worth
+knowing before quoting any single figure from this model as though it were
+robust to that assumption.
 
 **P&L on plan volumes** (one planned year, not an expectation):
 
@@ -432,7 +467,7 @@ python run.py                              # Part 1: one client, simulated costs
 python run.py --nadac data/raw/nadac.csv   # Part 1 with a full CMS NADAC download
 python run_book.py                         # Part 2: 12 clients, real NADAC costs
 python run_v3.py                           # Part 3: contract fixed, uncertainty optimized
-pytest -q                                  # 32 tests; skipped cleanly with no Gurobi or no licence
+pytest -q                                  # 35 tests; skipped cleanly with no Gurobi or no licence
 ```
 
 To use real costs, download a NADAC CSV from data.medicaid.gov (search "NADAC") and save it as `data/raw/nadac.csv`. The loader keeps generic drugs and the latest price per NDC.

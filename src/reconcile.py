@@ -82,7 +82,7 @@ def pnl(settled):
     }
 
 
-def check_true_up_against_solver(claims, prices, guarantees, terms, result, scenario=0):
+def check_true_up_against_solver(claims, prices, guarantees, terms, result, scenario=None):
     """Compare the SOLVER'S OWN true-up variables with an independent settlement.
 
     This is the check that can actually fail. The solver reports what each pool
@@ -94,8 +94,20 @@ def check_true_up_against_solver(claims, prices, guarantees, terms, result, scen
     (The earlier version of this function compared price x units aggregated two
     different ways, which was close to tautological. It was replaced.)
 
-    Returns the largest absolute difference in dollars across all pools.
+    `scenario=None` checks EVERY scenario the model was solved over and returns
+    the worst disagreement. Checking only scenario 0 would leave most of the
+    solver's variables untested, and -- when the model was trained on perturbed
+    volumes -- scenario 0 is not the planned year, so its result must not be
+    presented beside a plan-volume settlement.
+
+    Returns the largest absolute difference in dollars across all pools and all
+    scenarios checked.
     """
+    if scenario is None:
+        n = result.get("n_scenarios", 1)
+        return max(check_true_up_against_solver(claims, prices, guarantees, terms,
+                                                result, scenario=s) for s in range(n))
+
     mult = result.get("scenario_multipliers")
     if mult is None:
         line_mult = None

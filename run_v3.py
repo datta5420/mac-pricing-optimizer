@@ -103,7 +103,10 @@ def main():
     print("3. INDEPENDENT RECONCILIATION")
     print("   The solver's own true-up variables vs the same figure rebuilt from the")
     print("   claim lines (group, apply guarantee, take the positive part).")
-    print(f"   Largest disagreement: ${diff:,.6f}")
+    print(f"   Checked across all {result['n_scenarios']} scenarios the model was solved over,")
+    print(f"   each against its own volumes. Largest disagreement: ${diff:,.6f}")
+    print("   Note these are the TRAINING scenarios, not the planned year; the")
+    print("   plan-volume P&L below is a separate settlement with no solver counterpart.")
     book = pnl(settled)
     print("\n   P&L ON PLAN VOLUMES (the single planned year, not an expectation):")
     for k in ["admin_fee_revenue_$", "true_up_payments_$", "operating_cost_$",
@@ -116,6 +119,21 @@ def main():
     print(f"\n   Across the {args.test:,} held-out years, the same prices give a mean")
     print(f"   true-up of ${chosen['mean_true_up_$']:,.0f} and mean contribution of "
           f"${chosen['mean_contribution_$']:,.0f}.")
+    # Exceptions to the price-change policy, and what they cost.
+    pr = result["prices"]
+    ov = pr[pr["floor_override"]]
+    capped = pr["current_price"] * (1 + config.MAX_PRICE_CHANGE)
+    extra = float(((pr["new_price"] - capped) * pr["units"])[pr["floor_override"]].sum())
+    print(f"\n   PRICE-CHANGE POLICY EXCEPTIONS")
+    print(f"     {len(ov)} of {len(pr)} prices breach the +/-{100 * config.MAX_PRICE_CHANGE:.0f}% cap because the")
+    print( "     pharmacy cost floor sits above it. The floor wins by design: paying a")
+    print( "     pharmacy below acquisition cost is worse than a larger price move.")
+    if len(ov):
+        print(f"     Spend above the capped price on those rows: ${extra:,.0f} "
+              f"({100 * extra / float((pr['new_price'] * pr['units']).sum()):.2f}% of ingredient)")
+        print(f"     Largest single increase: "
+              f"{100 * (ov['new_price'] / ov['current_price'] - 1).max():.1f}%")
+
     print(f"\n   Objective composition: the price-stability penalty contributes "
           f"${result['disruption_cost']:,.0f}")
     print(f"   of the ${result['objective']:,.0f} objective "
@@ -153,6 +171,26 @@ def main():
     print(f"     range {rm['required_multiplier'].min():.3f} to {rm['required_multiplier'].max():.3f}; "
           f"{len(off)} of {len(rm)} outside +/-10% of 1.0")
     rm.to_csv(out / "v3_required_multipliers.csv", index=False)
+
+    # 5. The pharmacy floor is an assumption, so show what it is worth.
+    print("\n5. SENSITIVITY TO THE PHARMACY FLOOR (a synthetic proxy, not a contract)")
+    print("   The floor is NADAC x (1 + margin). NADAC is a national survey average,")
+    print("   so a real network would use contracted rates, lesser-of provisions and")
+    print("   different schedules per network. `margin_floor` is a parameter")
+    print("   everywhere; here is how much the answer depends on it.\n")
+    sens = []
+    for mf in [0.02, 0.05, 0.08, 0.12]:
+        f = feasibility_report(mac, claims, guarantees, margin_floor=mf)
+        r2 = optimize_mac(claims, mac, guarantees, scenarios=train, margin_floor=mf)
+        s2 = settle(claims, r2["prices"], guarantees, terms)
+        sens.append({"margin_floor": f"{100 * mf:.0f}%",
+                     "pools_short": int((f["status"] != "feasible").sum()),
+                     "true_up_plan_$": round(s2["true_up_$"].sum()),
+                     "contribution_$": round(s2["contribution_$"].sum()),
+                     "floor_exceptions": int(r2["prices"]["floor_override"].sum())})
+    sdf = pd.DataFrame(sens)
+    print(sdf.to_string(index=False))
+    sdf.to_csv(out / "v3_floor_sensitivity.csv", index=False)
     print(f"\nSaved outputs to {out}/")
 
 
